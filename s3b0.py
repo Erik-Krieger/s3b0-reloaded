@@ -3,15 +3,15 @@ import discord
 import re
 import logging
 import asyncio
-from os import environ
+from dotenv import dotenv_values
 from random import randint
 
 logging.basicConfig(level=logging.INFO)
 
 client = discord.Client()
 discord.opus.load_opus
-roll_command = "/swoll"
-img_base="https://raw.githubusercontent.com/thomcuddihy/s3b0/master/images/alpha/"
+roll_command = "/sd"
+img_base="https://raw.githubusercontent.com/Erik-Krieger/s3b0-reloaded/master/images/alpha/"
 
 Advantage="Advantage"
 Despair="Despair"
@@ -31,6 +31,23 @@ Red=0xe74c3c
 DarkRed=0x992d22
 LightPip = u"\u26AA"
 DarkPip = u"\u26AB"
+
+AssociationDict = {
+    'green': 'a',
+    #'grün': 'a',
+    'yellow': 'p',
+    'gelb': 'p',
+    'red': 'c',
+    'rot': 'c',
+    'purple': 'd',
+    'lila': 'd',
+    'blue': 'b',
+    'blau': 'blau',
+    'black': 's',
+    'schwarz': 's',
+    'white': 'f',
+    'weiß': 'f'
+}
 
 FirstConnect=True
 LastPlayingIndex=-1
@@ -282,7 +299,18 @@ class DicePool:
         
         return retResult
 
-def getDie(shortcode):
+def checkForAlternateDieNames(diename: str) -> str:
+    shortcode = ""
+    try:
+        shortcode = AssociationDict[diename]
+    except KeyError:
+        shortcode = diename
+    except:
+        print("Something went horribly wrong.")
+    return shortcode
+
+def getDie(diename: str) -> Die:
+    shortcode = checkForAlternateDieNames(diename)
     die = None
     if shortcode == 'a':
         die = AbilityDie()
@@ -300,10 +328,22 @@ def getDie(shortcode):
         die = SetbackDie()
     return die
 
-def parseRoll(diceString):
+def splitIntoDigitsAndLetters(string_t: tuple) -> list:
+    string = string_t[0]
+    l = []
+    for i in range(len(string) - 1):
+        if string[i + 1].isalpha():
+            l = [string[:i+1], string[i+1:]]
+            return l
+    raise Exception("The command is invalid!")
+
+def parseRoll(diceString: str):
+    # Variable definition
     fail="Unable to parse dice command. Please see " + roll_command + " for usage"
-    dice=[x for x in re.split('(\d*?[abcdfhpst])',diceString) if x]
+    #dice=[x for x in re.split('(\d*?[abcdfhpst])',diceString) if x]
+    dice=[x for x in re.split('([\d]+[a-zA-Z]+)',diceString) if x]
     
+    # Error handling
     if len(dice) == 0:
         return fail
 
@@ -313,25 +353,28 @@ def parseRoll(diceString):
     if len(dice) > 1 and ('f' in diceString):
         return "Can't chain Force die rolls!"
 
+    # Actual parsing
     dp = DicePool()
     for die in dice:
-        s=re.search('(\d*?)([abcdfhpst])', die)
-        if not s:
-            die="1"+die
-        s=re.search('(\d*?)([abcdfhpst])', die)
+        #s=re.search('(\d*?)([abcdfhpst])', die)
+        # if not s:
+        #     die="1"+die
+        # s=re.search('(\d*?)([abcdfhpst])', die)
+        s=re.search('([\d]+[a-zA-Z]+)', die)
         if not s:
             return fail
         g=s.groups()
-        if len(g) != 2:
-            return fail
+        # if len(g) != 2:
+        #     return fail
+        
+        l = splitIntoDigitsAndLetters(g)
+
         try:
-            num=int(g[0])
+            num=int(l[0])
         except:
             num=1
-        dieCode=g[1]
-        
-        if len(dieCode) > 1:
-            return fail
+            print(l)
+        dieCode=l[1]
 
         # if d10 or d100 rolls:
         if dieCode == 't' or dieCode == 'h':
@@ -363,7 +406,7 @@ async def cyclePlaying():
     while playing == LastPlayingIndex:
         playing=PlayingQuotes[randint(1,len(PlayingQuotes))]
     LastPlayingIndex=playing
-    await client.change_presence(game=discord.Game(name=playing))
+    await client.change_presence(activity=discord.Game(playing))
     await asyncio.sleep(randint(60,600))
 
 @client.event
@@ -381,7 +424,7 @@ async def on_message(message):
         return
     if message.content == roll_command:
         msg = """```
-/swoll [[number=1][die type]]...
+/sd [[number=1][die type]]...
 
 Die Types:
     a: Ability
@@ -395,16 +438,16 @@ Die Types:
     h: Hundred (d100) (can't be chained)
 
 Example:
-    /swoll 3a1p2c1b2s
-    /swoll 3f
-    /swoll h
+    /sd 3a1p2c1b2s
+    /sd 3f
+    /sd h
 ```"""
-        await client.send_message(message.channel, msg)
+        await message.channel.send(msg)
         return
     if message.content.startswith(roll_command):
         result = parseRoll(message.content[len(roll_command)+1:])
         if isinstance(result, str):
-            await client.send_message(message.channel, result)
+            await message.channel.send(result)
         else:
             em = discord.Embed(title=result.title, description=result.desc, colour=result.colour)
             if result.img:
@@ -412,7 +455,9 @@ Example:
             else:
                 em.set_footer(text=result.desc)
                 em.description=None
-            await client.send_message(message.channel, embed=em)
-    
-token=environ['S3B0_TOKEN']
+            await message.channel.send(embed=em)
+
+# Retrieve the bot key from the external file.
+token = dotenv_values("secret.env")["S3B0_TOKEN"]
+
 client.run(token)
